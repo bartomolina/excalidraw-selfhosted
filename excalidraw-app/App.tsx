@@ -36,10 +36,12 @@ import {
 import polyfill from "@excalidraw/excalidraw/polyfill";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
+import { serializeAsJSON } from "@excalidraw/excalidraw/data/json";
 import { t } from "@excalidraw/excalidraw/i18n";
 
 import {
   GithubIcon,
+  file,
   XBrandIcon,
   DiscordIcon,
   ExcalLogo,
@@ -106,6 +108,8 @@ import {
   ExportToExcalidrawPlus,
   exportToExcalidrawPlus,
 } from "./components/ExportToExcalidrawPlus";
+import { AuthScreen } from "./components/AuthScreen";
+import { ServerScenesDialog } from "./components/ServerScenesDialog";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 
 import {
@@ -147,8 +151,15 @@ import "./index.scss";
 
 import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
+import { authClient } from "./data/authClient";
+import {
+  createServerScene,
+  getServerScene,
+  updateServerScene,
+} from "./data/serverScenes";
 
 import type { CollabAPI } from "./collab/Collab";
+import type { ServerSceneMeta } from "./data/serverScenes";
 
 polyfill();
 
@@ -210,6 +221,14 @@ const shareableLinkConfirmDialog = {
     />
   ),
   actionLabel: t("overwriteConfirm.modal.shareableLink.button"),
+  color: "danger",
+} as const;
+
+const replaceCurrentSceneConfirmDialog = {
+  title: "Replace current scene?",
+  description:
+    "Opening a server scene replaces the current canvas. Unsaved changes will be lost.",
+  actionLabel: "Open scene",
   color: "danger",
 } as const;
 
@@ -371,10 +390,14 @@ const initializeScene = async (opts: {
   return { scene: null, isExternalScene: false };
 };
 
-const ExcalidrawWrapper = () => {
+const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
   const excalidrawAPI = useExcalidrawAPI();
 
   const [errorMessage, setErrorMessage] = useState("");
+  const [isServerScenesOpen, setIsServerScenesOpen] = useState(false);
+  const [currentServerScene, setCurrentServerScene] =
+    useState<ServerSceneMeta | null>(null);
+  const [isServerSceneDirty, setIsServerSceneDirty] = useState(false);
   const isCollabDisabled = isRunningInIframe();
 
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
@@ -419,6 +442,7 @@ const ExcalidrawWrapper = () => {
   });
 
   const [, forceRefresh] = useState(false);
+  const skipNextServerDirtyRef = useRef(false);
 
   useEffect(() => {
     if (isDevEnv()) {
@@ -680,6 +704,12 @@ const ExcalidrawWrapper = () => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
+    if (skipNextServerDirtyRef.current) {
+      skipNextServerDirtyRef.current = false;
+    } else {
+      setIsServerSceneDirty(true);
+    }
+
     if (collabAPI?.isCollaborating()) {
       collabAPI.syncElements(elements);
     }
@@ -729,6 +759,162 @@ const ExcalidrawWrapper = () => {
 
   const [latestShareableLink, setLatestShareableLink] = useState<string | null>(
     null,
+  );
+
+  const getCurrentSceneName = useCallback(() => {
+    const sceneName = excalidrawAPI?.getName().trim();
+    if (sceneName) {
+      return sceneName;
+    }
+    return currentServerScene?.name || "Untitled";
+  }, [currentServerScene?.name, excalidrawAPI]);
+
+  const buildServerScenePayload = useCallback(
+    (name: string) => {
+      if (!excalidrawAPI) {
+        throw new Error("Excalidraw API is not ready");
+      }
+
+      return JSON.parse(
+        serializeAsJSON(
+          excalidrawAPI.getSceneElementsIncludingDeleted(),
+          {
+            ...excalidrawAPI.getAppState(),
+            name,
+          },
+          excalidrawAPI.getFiles(),
+          "local",
+        ),
+      ) as Record<string, unknown>;
+    },
+    [excalidrawAPI],
+  );
+
+  const applyServerScene = useCallback(
+    async (sceneId: string) => {
+      if (!excalidrawAPI) {
+        throw new Error("Excalidraw API is not ready");
+      }
+
+      const { meta, scene } = await getServerScene(sceneId);
+      const restoredScene = await loadFromBlob(
+        new Blob([JSON.stringify(scene)], {
+          type: "application/json",
+        }),
+        excalidrawAPI.getAppState(),
+        excalidrawAPI.getSceneElementsIncludingDeleted(),
+      );
+
+      skipNextServerDirtyRef.current = true;
+      excalidrawAPI.resetScene({ resetLoadingState: true });
+      excalidrawAPI.updateScene({
+        elements: restoredScene.elements,
+        appState: restoreAppState(
+          {
+            ...restoredScene.appState,
+            name: meta.name,
+          },
+          excalidrawAPI.getAppState(),
+        ),
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+
+      const files = Object.values(restoredScene.files || {});
+      if (files.length) {
+        excalidrawAPI.addFiles(files);
+      }
+
+      setCurrentServerScene(meta);
+      setIsServerSceneDirty(false);
+      excalidrawAPI.setToast({
+        message: `Opened "${meta.name}" from the server.`,
+      });
+    },
+    [excalidrawAPI],
+  );
+
+  const maybeConfirmSceneReplacement = useCallback(async () => {
+    if (!excalidrawAPI) {
+      return false;
+    }
+
+    const hasSceneContent =
+      excalidrawAPI.getSceneElements().length > 0 ||
+      !!currentServerScene ||
+      isServerSceneDirty;
+
+    if (!hasSceneContent) {
+      return true;
+    }
+
+    return openConfirmModal(replaceCurrentSceneConfirmDialog);
+  }, [currentServerScene, excalidrawAPI, isServerSceneDirty]);
+
+  const handleOpenServerScene = useCallback(
+    async (sceneId: string) => {
+      const shouldOpen = await maybeConfirmSceneReplacement();
+      if (!shouldOpen) {
+        return;
+      }
+
+      await applyServerScene(sceneId);
+    },
+    [applyServerScene, maybeConfirmSceneReplacement],
+  );
+
+  const handleSaveServerScene = useCallback(
+    async ({ mode, name }: { mode: "save" | "saveAs"; name?: string }) => {
+      if (!excalidrawAPI) {
+        throw new Error("Excalidraw API is not ready");
+      }
+
+      const sceneName =
+        name?.trim() ||
+        (mode === "save" ? currentServerScene?.name : "") ||
+        getCurrentSceneName();
+      const payload = buildServerScenePayload(sceneName);
+
+      const result =
+        mode === "save" && currentServerScene
+          ? await updateServerScene(currentServerScene.id, sceneName, payload)
+          : await createServerScene(sceneName, payload);
+
+      skipNextServerDirtyRef.current = true;
+      excalidrawAPI.updateScene({
+        appState: {
+          name: result.meta.name,
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+      setCurrentServerScene(result.meta);
+      setIsServerSceneDirty(false);
+      excalidrawAPI.setToast({
+        message: `Saved "${result.meta.name}" to the server.`,
+      });
+      return result.meta;
+    },
+    [
+      buildServerScenePayload,
+      currentServerScene,
+      excalidrawAPI,
+      getCurrentSceneName,
+    ],
+  );
+
+  const handleServerSceneDeleted = useCallback(
+    async (sceneId: string) => {
+      if (currentServerScene?.id !== sceneId) {
+        return;
+      }
+
+      setCurrentServerScene(null);
+      setIsServerSceneDirty(true);
+      excalidrawAPI?.setToast({
+        message:
+          "Deleted the current server file. The canvas remains open locally.",
+      });
+    },
+    [currentServerScene?.id, excalidrawAPI],
   );
 
   const onExportToBackend = async (
@@ -985,6 +1171,8 @@ const ExcalidrawWrapper = () => {
       >
         <AppMainMenu
           onCollabDialogOpen={onCollabDialogOpen}
+          onServerScenesOpen={() => setIsServerScenesOpen(true)}
+          onSignOut={onSignOut}
           isCollaborating={isCollaborating}
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
@@ -1036,6 +1224,19 @@ const ExcalidrawWrapper = () => {
             setErrorMessage={setErrorMessage}
           />
         )}
+        {excalidrawAPI && (
+          <ServerScenesDialog
+            isOpen={isServerScenesOpen}
+            onClose={() => setIsServerScenesOpen(false)}
+            currentScene={currentServerScene}
+            isDirty={isServerSceneDirty}
+            suggestedName={getCurrentSceneName()}
+            onOpenScene={handleOpenServerScene}
+            onSaveScene={handleSaveServerScene}
+            onSceneDeleted={handleServerSceneDeleted}
+            onError={setErrorMessage}
+          />
+        )}
         {excalidrawAPI && !isCollabDisabled && (
           <Collab excalidrawAPI={excalidrawAPI} />
         )}
@@ -1067,6 +1268,54 @@ const ExcalidrawWrapper = () => {
 
         <CommandPalette
           customCommandPaletteItems={[
+            {
+              label: "Server scenes",
+              category: DEFAULT_CATEGORIES.app,
+              predicate: true,
+              icon: file,
+              keywords: [
+                "server",
+                "disk",
+                "files",
+                "open",
+                "save",
+                "selfhosted",
+              ],
+              perform: () => {
+                setIsServerScenesOpen(true);
+              },
+            },
+            {
+              label: "Save scene to server",
+              category: DEFAULT_CATEGORIES.export,
+              predicate: true,
+              icon: file,
+              keywords: ["save", "server", "scene", "disk", "selfhosted"],
+              perform: async () => {
+                try {
+                  await handleSaveServerScene({ mode: "save" });
+                } catch (error: any) {
+                  setErrorMessage(error.message);
+                }
+              },
+            },
+            {
+              label: "Save scene to server as",
+              category: DEFAULT_CATEGORIES.export,
+              predicate: true,
+              icon: file,
+              keywords: [
+                "save",
+                "server",
+                "scene",
+                "rename",
+                "duplicate",
+                "selfhosted",
+              ],
+              perform: () => {
+                setIsServerScenesOpen(true);
+              },
+            },
             {
               label: t("labels.liveCollaboration"),
               category: DEFAULT_CATEGORIES.app,
@@ -1266,6 +1515,27 @@ const ExcalidrawWrapper = () => {
   );
 };
 
+const AuthenticatedExcalidraw = () => {
+  const { data: session, isPending } = authClient.useSession();
+  const allowedEmailsLabel =
+    import.meta.env.VITE_EXCALIDRAW_ALLOWED_EMAILS || "bartomolina@gmail.com";
+
+  const handleSignOut = useCallback(async () => {
+    await authClient.signOut();
+    window.location.href = "/";
+  }, []);
+
+  if (isPending) {
+    return <AuthScreen allowedEmailsLabel={allowedEmailsLabel} />;
+  }
+
+  if (!session) {
+    return <AuthScreen allowedEmailsLabel={allowedEmailsLabel} />;
+  }
+
+  return <ExcalidrawWrapper onSignOut={handleSignOut} />;
+};
+
 const ExcalidrawApp = () => {
   const isCloudExportWindow =
     window.location.pathname === "/excalidraw-plus-export";
@@ -1277,7 +1547,7 @@ const ExcalidrawApp = () => {
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
         <ExcalidrawAPIProvider>
-          <ExcalidrawWrapper />
+          <AuthenticatedExcalidraw />
         </ExcalidrawAPIProvider>
       </Provider>
     </TopErrorBoundary>

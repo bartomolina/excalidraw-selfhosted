@@ -94,6 +94,81 @@ yarn add react react-dom @excalidraw/excalidraw
 
 Check out our [documentation](https://docs.excalidraw.com/docs/@excalidraw/excalidraw/installation) for more details!
 
+## Self-hosted server save/load
+
+This clone now includes a small Node server for self-hosted deployments. It serves the built Excalidraw app and exposes scene storage endpoints under `/api/scenes`, with drawings stored on disk as `.excalidraw` files.
+
+### What it adds
+
+- Server-backed scene list, open, save, save as, and delete.
+- Scene files stored on the local filesystem instead of Excalidraw-hosted backends.
+- A minimal in-app "Server scenes" dialog in the Excalidraw main menu and command palette.
+
+### Default storage location
+
+```text
+/root/.openclaw/workspace/data/excalidraw/scenes
+```
+
+Override it with `EXCALIDRAW_SCENES_DIR`.
+
+### Local run
+
+1. Copy `.env.local.example` to `.env.local` and fill in the auth/email secrets.
+2. Install dependencies, build the app, then start the server:
+
+```bash
+cp .env.local.example .env.local
+corepack yarn install
+corepack yarn build:selfhosted
+corepack yarn start:selfhosted
+```
+
+By default the server listens on `0.0.0.0:5001`.
+
+### Production run
+
+```bash
+corepack yarn install --frozen-lockfile
+corepack yarn build:selfhosted
+HOST=0.0.0.0 PORT=5001 corepack yarn start:selfhosted
+```
+
+Environment variables:
+
+- `HOST`: bind address for the Node server. Default: `0.0.0.0`
+- `PORT`: HTTP port for the Node server. Default: `5001`
+- `BETTER_AUTH_URL`: public URL for this Excalidraw instance (for Better Auth magic links)
+- `BETTER_AUTH_SECRET`: Better Auth secret for session signing/encryption
+- `RESEND_API_KEY`: Resend API key used to deliver magic links
+- `AUTH_FROM_EMAIL`: sender address for magic-link emails
+- `EXCALIDRAW_ALLOWED_EMAILS`: comma-separated allowlist for who can sign in. Default: `bartomolina@gmail.com`
+- `VITE_EXCALIDRAW_ALLOWED_EMAILS`: optional frontend hint for the sign-in screen
+- `EXCALIDRAW_AUTH_DB_PATH`: path to the SQLite auth database. Default: `/root/.openclaw/workspace/data/excalidraw/auth.sqlite`
+- `EXCALIDRAW_SCENES_DIR`: directory where `.excalidraw` scene files are stored
+- `EXCALIDRAW_STATIC_DIR`: optional override for the built app directory. Default: `excalidraw-app/build`
+
+### Authentication
+
+This self-hosted deployment now uses Better Auth magic-link login.
+
+- Unauthorized users cannot access `/api/scenes`
+- Scene storage is protected by Better Auth session cookies
+- You can keep it single-user by setting `EXCALIDRAW_ALLOWED_EMAILS` to one email address
+- Better Auth migrations are run automatically when the Node server starts
+
+### API routes
+
+Auth:
+- Better Auth endpoints under `/api/auth/*`
+
+Scene storage:
+- `GET /api/scenes`
+- `GET /api/scenes/:id`
+- `POST /api/scenes`
+- `PUT /api/scenes/:id`
+- `DELETE /api/scenes/:id`
+
 ## Contributing
 
 - Missing something or found a bug? [Report here](https://github.com/excalidraw/excalidraw/issues).

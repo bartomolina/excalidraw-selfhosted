@@ -52,6 +52,7 @@
     "build-node": "node ./scripts/build-node.js",
     "build:app:docker": "yarn --cwd ./excalidraw-app build:app:docker",
     "build:app": "yarn --cwd ./excalidraw-app build:app",
+    "build:selfhosted": "yarn build",
     "build:common": "yarn --cwd ./packages/common build:esm",
     "build:element": "yarn --cwd ./packages/element build:esm",
     "build:excalidraw": "yarn --cwd ./packages/excalidraw build:esm",
@@ -62,6 +63,7 @@
     "build:preview": "yarn --cwd ./excalidraw-app build:preview",
     "start": "yarn --cwd ./excalidraw-app start",
     "start:production": "yarn --cwd ./excalidraw-app start:production",
+    "start:selfhosted": "node ./server/index.mjs",
     "start:example": "yarn build:packages && yarn --cwd ./examples/with-script-in-browser start",
     "test:all": "yarn test:typecheck && yarn test:code && yarn test:other && yarn test:app --watch=false",
     "test:app": "vitest",
@@ -90,5 +92,10 @@
   },
   "resolutions": {
     "strip-ansi": "6.0.1"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "better-auth": "1.5.6",
+    "resend": "6.9.4"
   }
 }
