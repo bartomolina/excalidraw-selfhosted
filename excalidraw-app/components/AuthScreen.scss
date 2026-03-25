@@ -1,0 +1,89 @@
+.excalidraw-auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: var(--color-primary-light, #f8fafc);
+}
+
+.excalidraw-auth-card {
+  width: min(100%, 28rem);
+  padding: 1.5rem;
+  border-radius: 1rem;
+  background: var(--island-bg-color, #ffffff);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 1rem;
+}
+
+.excalidraw-auth-card h1,
+.excalidraw-auth-card p {
+  margin: 0;
+}
+
+.excalidraw-auth-card__eyebrow {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-primary, #2563eb);
+}
+
+.excalidraw-auth-card__form {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.excalidraw-auth-card__form label {
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.excalidraw-auth-card__form input {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  font-size: 1rem;
+  background: #fff;
+}
+
+.excalidraw-auth-card__form button {
+  border: 0;
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: white;
+  background: var(--color-primary, #2563eb);
+}
+
+.excalidraw-auth-card__form button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.excalidraw-auth-card__message {
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.excalidraw-auth-card__message--error {
+  background: rgba(220, 38, 38, 0.08);
+  color: #991b1b;
+}
+
+.excalidraw-auth-card__message--success {
+  background: rgba(22, 163, 74, 0.08);
+  color: #166534;
+}
+
+.excalidraw-auth-card__hint {
+  font-size: 0.875rem;
+  color: rgba(15, 23, 42, 0.72);
+}

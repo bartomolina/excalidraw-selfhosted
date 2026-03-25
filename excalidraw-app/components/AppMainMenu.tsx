@@ -1,6 +1,7 @@
 import {
   loginIcon,
   ExcalLogo,
+  file,
   eyeIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { MainMenu } from "@excalidraw/excalidraw/index";
@@ -17,6 +18,8 @@ import { saveDebugState } from "./DebugCanvas";
 
 export const AppMainMenu: React.FC<{
   onCollabDialogOpen: () => any;
+  onServerScenesOpen: () => void;
+  onSignOut: () => void;
   isCollaborating: boolean;
   isCollabEnabled: boolean;
   theme: Theme | "system";
@@ -25,6 +28,10 @@ export const AppMainMenu: React.FC<{
 }> = React.memo((props) => {
   return (
     <MainMenu>
+      <MainMenu.Item icon={file} onSelect={props.onServerScenesOpen}>
+        Server scenes
+      </MainMenu.Item>
+      <MainMenu.Separator />
       <MainMenu.DefaultItems.LoadScene />
       <MainMenu.DefaultItems.SaveToActiveFile />
       <MainMenu.DefaultItems.Export />
@@ -87,6 +94,10 @@ export const AppMainMenu: React.FC<{
         <LanguageList style={{ width: "100%" }} />
       </MainMenu.ItemCustom>
       <MainMenu.DefaultItems.ChangeCanvasBackground />
+      <MainMenu.Separator />
+      <MainMenu.Item icon={loginIcon} onSelect={props.onSignOut}>
+        Sign out
+      </MainMenu.Item>
     </MainMenu>
   );
 });
