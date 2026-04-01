@@ -1,20 +1,30 @@
 .excalidraw-auth-screen {
+  --auth-paper: #ffffff;
+  --auth-border: rgba(15, 23, 42, 0.08);
+  --auth-text: #10213b;
+  --auth-muted: rgba(16, 33, 59, 0.66);
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: var(--color-primary-light, #f8fafc);
+  background: linear-gradient(180deg, #fbfdff, #f4f7fb);
 }
 
 .excalidraw-auth-card {
   width: min(100%, 28rem);
-  padding: 1.5rem;
-  border-radius: 1rem;
-  background: var(--island-bg-color, #ffffff);
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+  padding: 1.4rem;
+  border-radius: 1.1rem;
+  background: var(--auth-paper);
+  border: 1px solid var(--auth-border);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
   display: grid;
   gap: 1rem;
+  color: var(--auth-text);
+}
+
+.excalidraw-auth-card__halo {
+  display: none;
 }
 
 .excalidraw-auth-card h1,
@@ -22,55 +32,103 @@
   margin: 0;
 }
 
+.excalidraw-auth-card__eyebrow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .excalidraw-auth-card__eyebrow {
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--color-primary, #2563eb);
+  color: #2151c9;
+}
+
+.excalidraw-auth-card__header {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.excalidraw-auth-card__header h1 {
+  font-size: clamp(1.7rem, 4vw, 2.15rem);
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+}
+
+.excalidraw-auth-card__header p {
+  color: var(--auth-muted);
+  line-height: 1.55;
 }
 
 .excalidraw-auth-card__form {
   display: grid;
-  gap: 0.875rem;
+  gap: 0.9rem;
 }
 
 .excalidraw-auth-card__form label {
   display: grid;
   gap: 0.5rem;
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: rgba(16, 33, 59, 0.84);
+  min-width: 0;
+}
+
+.excalidraw-auth-card__form input,
+.excalidraw-auth-card__form button {
+  box-sizing: border-box;
 }
 
 .excalidraw-auth-card__form input {
+  display: block;
   width: 100%;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  border-radius: 0.75rem;
-  padding: 0.8rem 0.9rem;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 0.9rem;
+  padding: 0.9rem 0.95rem;
   font-size: 1rem;
   background: #fff;
+  color: var(--auth-text);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.excalidraw-auth-card__form input:focus {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.42);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
 }
 
 .excalidraw-auth-card__form button {
+  width: 100%;
   border: 0;
-  border-radius: 0.75rem;
-  padding: 0.85rem 1rem;
-  font-size: 1rem;
-  font-weight: 700;
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  font-size: 0.98rem;
+  font-weight: 800;
   cursor: pointer;
   color: white;
-  background: var(--color-primary, #2563eb);
+  background: #2563eb;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.excalidraw-auth-card__form button:hover:not(:disabled) {
+  background: #1d4ed8;
 }
 
 .excalidraw-auth-card__form button:disabled {
   cursor: wait;
-  opacity: 0.7;
+  opacity: 0.75;
 }
 
 .excalidraw-auth-card__message {
-  padding: 0.8rem 0.9rem;
-  border-radius: 0.75rem;
-  font-size: 0.95rem;
+  padding: 0.82rem 0.9rem;
+  border-radius: 0.9rem;
+  font-size: 0.94rem;
+  line-height: 1.5;
 }
 
 .excalidraw-auth-card__message--error {
@@ -79,11 +137,32 @@
 }
 
 .excalidraw-auth-card__message--success {
-  background: rgba(22, 163, 74, 0.08);
+  background: rgba(22, 163, 74, 0.1);
   color: #166534;
 }
 
 .excalidraw-auth-card__hint {
-  font-size: 0.875rem;
-  color: rgba(15, 23, 42, 0.72);
+  font-size: 0.84rem;
+  color: var(--auth-muted);
+  line-height: 1.5;
+}
+
+.excalidraw-auth-card,
+.excalidraw-auth-card * {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .excalidraw-auth-screen {
+    padding: 1rem;
+  }
+
+  .excalidraw-auth-card {
+    padding: 1.15rem;
+  }
+
+  .excalidraw-auth-card__eyebrow-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

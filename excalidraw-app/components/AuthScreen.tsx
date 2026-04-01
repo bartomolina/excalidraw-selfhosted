@@ -5,12 +5,8 @@ import { authClient } from "../data/authClient";
 
 import "./AuthScreen.scss";
 
-type AuthScreenProps = {
-  allowedEmailsLabel: string;
-};
-
-export const AuthScreen = ({ allowedEmailsLabel }: AuthScreenProps) => {
-  const [email, setEmail] = useState(allowedEmailsLabel.split(",")[0]?.trim() || "");
+export const AuthScreen = () => {
+  const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -39,12 +35,15 @@ export const AuthScreen = ({ allowedEmailsLabel }: AuthScreenProps) => {
   return (
     <div className="excalidraw-auth-screen">
       <div className="excalidraw-auth-card">
-        <div className="excalidraw-auth-card__eyebrow">Private Excalidraw</div>
-        <h1>Sign in</h1>
-        <p>
-          This Excalidraw instance uses Better Auth with magic links. Only the
-          allowlisted email can access server-stored scenes.
-        </p>
+        <div className="excalidraw-auth-card__halo" aria-hidden="true" />
+        <div className="excalidraw-auth-card__eyebrow-row">
+          <div className="excalidraw-auth-card__eyebrow">Private Excalidraw</div>
+        </div>
+
+        <div className="excalidraw-auth-card__header">
+          <h1>Sign in</h1>
+        </div>
+
         <form className="excalidraw-auth-card__form" onSubmit={onSubmit}>
           <label>
             Email
@@ -54,7 +53,7 @@ export const AuthScreen = ({ allowedEmailsLabel }: AuthScreenProps) => {
               disabled={isSubmitting}
               inputMode="email"
               onChange={(event) => setEmail(event.target.value)}
-              placeholder={allowedEmailsLabel}
+              placeholder="you@example.com"
               type="email"
               value={email}
             />
@@ -63,6 +62,7 @@ export const AuthScreen = ({ allowedEmailsLabel }: AuthScreenProps) => {
             {isSubmitting ? "Sending…" : "Send magic link"}
           </button>
         </form>
+
         {errorMessage ? (
           <div className="excalidraw-auth-card__message excalidraw-auth-card__message--error">
             {errorMessage}
@@ -73,9 +73,8 @@ export const AuthScreen = ({ allowedEmailsLabel }: AuthScreenProps) => {
             {successMessage}
           </div>
         ) : null}
-        <p className="excalidraw-auth-card__hint">
-          Allowed email: <strong>{allowedEmailsLabel}</strong>
-        </p>
+
+        <p className="excalidraw-auth-card__hint">We’ll email you a one-time sign-in link.</p>
       </div>
     </div>
   );

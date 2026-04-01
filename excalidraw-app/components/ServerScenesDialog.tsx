@@ -150,6 +150,7 @@ export const ServerScenesDialog = ({
           <FilledButton
             label="Save"
             icon={save}
+            size="large"
             onClick={() => handleSave("save")}
             disabled={!!busyAction}
           />
@@ -162,12 +163,14 @@ export const ServerScenesDialog = ({
           <FilledButton
             label="Save as new"
             icon={saveAs}
+            size="large"
             onClick={() => handleSave("saveAs")}
             disabled={!saveName.trim() || !!busyAction}
           />
           <FilledButton
             label="Refresh"
             variant="outlined"
+            size="large"
             onClick={() => runAction("refresh", refreshScenes)}
             disabled={!!busyAction}
           />
@@ -194,6 +197,26 @@ export const ServerScenesDialog = ({
                   className="ServerScenesDialog__scene"
                   data-current={isCurrent || undefined}
                 >
+                  {scene.imageUrl ? (
+                    <a
+                      className="ServerScenesDialog__scenePreview"
+                      href={scene.imageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open image preview for ${scene.name}`}
+                    >
+                      <img
+                        src={scene.imageUrl}
+                        alt={`Preview of ${scene.name}`}
+                        loading="lazy"
+                      />
+                    </a>
+                  ) : (
+                    <div
+                      className="ServerScenesDialog__scenePreview ServerScenesDialog__scenePreview--empty"
+                      aria-hidden
+                    />
+                  )}
                   <div className="ServerScenesDialog__sceneInfo">
                     <div className="ServerScenesDialog__sceneName">
                       {scene.name}
@@ -204,6 +227,15 @@ export const ServerScenesDialog = ({
                         {Math.max(1, Math.round(scene.size / 1024))} KB
                       </span>
                       {isCurrent && <span>Current</span>}
+                      {scene.imageUrl ? (
+                        <a
+                          href={scene.imageUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Image
+                        </a>
+                      ) : null}
                     </div>
                   </div>
                   <div className="ServerScenesDialog__sceneActions">
@@ -235,7 +267,8 @@ export const ServerScenesDialog = ({
 
         <div className="ServerScenesDialog__footer">
           <div className="ServerScenesDialog__footerHint">
-            Files are stored on the server as <code>.excalidraw</code> files.
+            Files are stored on the server as <code>.excalidraw</code> and PNG
+            preview files.
           </div>
           <div className="ServerScenesDialog__footerIcons" aria-hidden>
             <span>{file}</span>

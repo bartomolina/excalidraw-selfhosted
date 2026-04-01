@@ -1,0 +1,44 @@
+@import "../../packages/excalidraw/css/variables.module.scss";
+
+.excalidraw {
+  .ServerSceneTopBar {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-inline-end: 0.5rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary-color);
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    &__dot {
+      width: 0.45rem;
+      height: 0.45rem;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.95;
+      flex-shrink: 0;
+    }
+
+    &__label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: -0.01em;
+    }
+
+    &--saved {
+      color: #0d8f68;
+    }
+
+    &--dirty {
+      color: #b76b00;
+    }
+
+    &--local {
+      color: var(--text-secondary-color);
+    }
+  }
+}

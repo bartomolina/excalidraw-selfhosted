@@ -3,11 +3,17 @@ export type ServerSceneMeta = {
   name: string;
   size: number;
   updatedAt: string;
+  imageUrl: string | null;
 };
 
 export type ServerSceneDocument = {
   scene: Record<string, unknown>;
   meta: ServerSceneMeta;
+};
+
+export type ServerSceneImagePayload = {
+  dataURL: string;
+  mimeType: "image/png";
 };
 
 const fetchJson = async <T>(input: RequestInfo, init?: RequestInit) => {
@@ -50,20 +56,22 @@ export const getServerScene = async (id: string) =>
 export const createServerScene = async (
   name: string,
   scene: Record<string, unknown>,
+  image?: ServerSceneImagePayload | null,
 ) =>
   fetchJson<ServerSceneDocument>("/api/scenes", {
     method: "POST",
-    body: JSON.stringify({ name, scene }),
+    body: JSON.stringify({ name, scene, image }),
   });
 
 export const updateServerScene = async (
   id: string,
   name: string,
   scene: Record<string, unknown>,
+  image?: ServerSceneImagePayload | null,
 ) =>
   fetchJson<ServerSceneDocument>(`/api/scenes/${id}`, {
     method: "PUT",
-    body: JSON.stringify({ name, scene }),
+    body: JSON.stringify({ name, scene, image }),
   });
 
 export const deleteServerScene = async (id: string) =>

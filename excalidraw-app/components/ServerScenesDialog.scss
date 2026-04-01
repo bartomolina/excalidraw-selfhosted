@@ -68,7 +68,7 @@
   align-items: center;
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
   padding: 0.9rem 1rem;
 
   &:not(:last-child) {
@@ -82,6 +82,27 @@
       var(--color-surface-low)
     );
   }
+}
+
+.ServerScenesDialog__scenePreview {
+  aspect-ratio: 4 / 3;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+  display: block;
+  overflow: hidden;
+  width: 100%;
+
+  img {
+    display: block;
+    height: 100%;
+    object-fit: cover;
+    width: 100%;
+  }
+}
+
+.ServerScenesDialog__scenePreview--empty {
+  opacity: 0.45;
 }
 
 .ServerScenesDialog__sceneInfo {
@@ -99,6 +120,12 @@
   gap: 0.75rem;
   margin-top: 0.2rem;
   font-size: 0.875rem;
+
+  a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+  }
 }
 
 .ServerScenesDialog__sceneActions {
@@ -130,6 +157,10 @@
 
   .ServerScenesDialog__scene {
     grid-template-columns: 1fr;
+  }
+
+  .ServerScenesDialog__scenePreview {
+    max-width: 7rem;
   }
 
   .ServerScenesDialog__sceneActions {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import {
   mkdir,
@@ -42,6 +43,15 @@ const sendJson = (res, statusCode, body) => {
   res.end(payload);
 };
 
+const sendBuffer = (res, statusCode, body, contentType) => {
+  res.writeHead(statusCode, {
+    "Cache-Control": "no-store",
+    "Content-Length": body.length,
+    "Content-Type": contentType,
+  });
+  res.end(body);
+};
+
 const sendError = (res, statusCode, message) => {
   sendJson(res, statusCode, { error: message });
 };
@@ -70,8 +80,17 @@ const prettifyId = (id) =>
     .join(" ") || "Untitled";
 
 const getScenePath = (id) => path.join(scenesDir, `${id}.excalidraw`);
+const getSceneImagePath = (id) => path.join(scenesDir, `${id}.png`);
+const getScenePreviewMetaPath = (id) =>
+  path.join(scenesDir, `${id}.preview.json`);
 
 const isSafeId = (id) => /^[a-z0-9][a-z0-9-]*$/.test(id);
+const isSafePublicId = (value) => /^[a-f0-9]{32}$/.test(value);
+
+const createPublicPreviewId = () => randomUUID().replace(/-/g, "");
+
+const buildSceneImageUrl = (publicId, cacheBustToken) =>
+  `/preview/${publicId}.png?t=${encodeURIComponent(cacheBustToken)}`;
 
 const ensureSceneDirectory = async () => {
   await mkdir(scenesDir, { recursive: true });
@@ -115,8 +134,8 @@ const normalizeSceneDocument = (scene, requestedName) => {
     typeof requestedName === "string" && requestedName.trim()
       ? requestedName.trim()
       : typeof scene.appState?.name === "string" && scene.appState.name.trim()
-        ? scene.appState.name.trim()
-        : "Untitled";
+      ? scene.appState.name.trim()
+      : "Untitled";
 
   return {
     ...scene,
@@ -125,6 +144,120 @@ const normalizeSceneDocument = (scene, requestedName) => {
       name: normalizedName,
     },
   };
+};
+
+const normalizeSceneImage = (image) => {
+  if (image == null) {
+    return null;
+  }
+
+  if (typeof image !== "object" || Array.isArray(image)) {
+    const error = new Error("Scene image payload must be an object");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (image.mimeType !== "image/png") {
+    const error = new Error("Scene image must be a PNG");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (typeof image.dataURL !== "string") {
+    const error = new Error("Scene image must include a data URL");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const match = image.dataURL.match(
+    /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/,
+  );
+  if (!match) {
+    const error = new Error("Scene image data URL is invalid");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return Buffer.from(match[1], "base64");
+};
+
+const parseScenePreviewInfo = (raw) => {
+  let previewInfo;
+
+  try {
+    previewInfo = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (
+    !previewInfo ||
+    typeof previewInfo !== "object" ||
+    Array.isArray(previewInfo) ||
+    !isSafePublicId(previewInfo.publicId)
+  ) {
+    return null;
+  }
+
+  return {
+    publicId: previewInfo.publicId,
+  };
+};
+
+const readScenePreviewInfo = async (id) => {
+  if (!isSafeId(id)) {
+    const error = new Error("Invalid scene id");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  try {
+    const raw = await readFile(getScenePreviewMetaPath(id), "utf8");
+    return parseScenePreviewInfo(raw);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const writeScenePreviewInfo = async (id, previewInfo) => {
+  if (!isSafeId(id)) {
+    const error = new Error("Invalid scene id");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!previewInfo || !isSafePublicId(previewInfo.publicId)) {
+    const error = new Error("Invalid scene preview metadata");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const targetPath = getScenePreviewMetaPath(id);
+  const tempPath = `${targetPath}.tmp`;
+
+  await writeFile(tempPath, JSON.stringify(previewInfo, null, 2), "utf8");
+
+  try {
+    await rename(tempPath, targetPath);
+  } finally {
+    await rm(tempPath, { force: true });
+  }
+};
+
+const ensureScenePreviewInfo = async (id) => {
+  const existingPreviewInfo = await readScenePreviewInfo(id);
+  if (existingPreviewInfo) {
+    return existingPreviewInfo;
+  }
+
+  const previewInfo = {
+    publicId: createPublicPreviewId(),
+  };
+  await writeScenePreviewInfo(id, previewInfo);
+  return previewInfo;
 };
 
 const loadSceneDocument = async (id) => {
@@ -162,12 +295,28 @@ const loadSceneDocument = async (id) => {
     typeof scene?.appState?.name === "string" && scene.appState.name.trim()
       ? scene.appState.name.trim()
       : prettifyId(id);
+  const previewInfo = await ensureScenePreviewInfo(id);
+  const imagePath = getSceneImagePath(id);
+  let imageUrl = null;
+
+  try {
+    const imageStats = await stat(imagePath);
+    imageUrl = buildSceneImageUrl(
+      previewInfo.publicId,
+      String(Math.trunc(imageStats.mtimeMs)),
+    );
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw error;
+    }
+  }
 
   return {
     filePath,
     scene,
     meta: {
       id,
+      imageUrl,
       name,
       size: fileStats.size,
       updatedAt: fileStats.mtime.toISOString(),
@@ -197,25 +346,171 @@ const getUniqueSceneId = async (name, currentId = null) => {
   }
 };
 
-const writeScene = async ({ currentId = null, name, scene }) => {
+const createDuplicateSceneNameError = (name) => {
+  const error = new Error(
+    `A server scene named "${name}" already exists. Use Save to update it or choose a different name.`,
+  );
+  error.statusCode = 409;
+  return error;
+};
+
+const findSceneByName = async (name, { excludeId = null } = {}) => {
+  await ensureSceneDirectory();
+  const entries = await readdir(scenesDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".excalidraw")) {
+      continue;
+    }
+
+    const sceneId = entry.name.replace(/\.excalidraw$/, "");
+    if (sceneId === excludeId) {
+      continue;
+    }
+
+    const document = await loadSceneDocument(sceneId);
+    if (document.meta.name === name) {
+      return document;
+    }
+  }
+
+  return null;
+};
+
+const assertSceneNameAvailable = async (name, currentId = null) => {
+  if (!currentId) {
+    const existingScene = await findSceneByName(name);
+    if (existingScene) {
+      throw createDuplicateSceneNameError(name);
+    }
+    return;
+  }
+
+  const currentScene = await loadSceneDocument(currentId);
+  if (currentScene.meta.name === name) {
+    return;
+  }
+
+  const existingScene = await findSceneByName(name, { excludeId: currentId });
+  if (existingScene) {
+    throw createDuplicateSceneNameError(name);
+  }
+};
+
+const writeScene = async ({ currentId = null, name, scene, image }) => {
   const normalizedScene = normalizeSceneDocument(scene, name);
+  const normalizedImage = normalizeSceneImage(image);
+
+  await assertSceneNameAvailable(normalizedScene.appState.name, currentId);
+
   const sceneId = await getUniqueSceneId(
     normalizedScene.appState.name,
     currentId,
   );
   const targetPath = getScenePath(sceneId);
   const tempPath = `${targetPath}.tmp`;
+  const targetImagePath = getSceneImagePath(sceneId);
+  const tempImagePath = `${targetImagePath}.tmp`;
   const serialized = JSON.stringify(normalizedScene, null, 2);
+  const previewInfo = currentId
+    ? await ensureScenePreviewInfo(currentId)
+    : { publicId: createPublicPreviewId() };
 
   await writeFile(tempPath, serialized, "utf8");
-  await rename(tempPath, targetPath);
+  if (normalizedImage) {
+    await writeFile(tempImagePath, normalizedImage);
+  }
 
-  if (currentId && currentId !== sceneId) {
-    await rm(getScenePath(currentId), { force: true });
+  try {
+    await rename(tempPath, targetPath);
+
+    if (normalizedImage) {
+      await rename(tempImagePath, targetImagePath);
+    }
+
+    await writeScenePreviewInfo(sceneId, previewInfo);
+
+    if (currentId && currentId !== sceneId) {
+      const previousScenePath = getScenePath(currentId);
+      const previousImagePath = getSceneImagePath(currentId);
+      const previousPreviewMetaPath = getScenePreviewMetaPath(currentId);
+
+      await rm(previousScenePath, { force: true });
+
+      if (normalizedImage) {
+        await rm(previousImagePath, { force: true });
+      } else {
+        try {
+          await rename(previousImagePath, targetImagePath);
+        } catch (error) {
+          if (error.code !== "ENOENT") {
+            throw error;
+          }
+        }
+      }
+
+      await rm(previousPreviewMetaPath, { force: true });
+    }
+  } finally {
+    await rm(tempPath, { force: true });
+    await rm(tempImagePath, { force: true });
   }
 
   return formatSceneResponse(await loadSceneDocument(sceneId));
 };
+
+const readSceneImage = async (id) => {
+  if (!isSafeId(id)) {
+    const error = new Error("Invalid scene id");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  try {
+    return await readFile(getSceneImagePath(id));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      const notFoundError = new Error("Scene image not found");
+      notFoundError.statusCode = 404;
+      throw notFoundError;
+    }
+    throw error;
+  }
+};
+
+const getSceneIdByPublicPreviewId = async (publicId) => {
+  if (!isSafePublicId(publicId)) {
+    const error = new Error("Invalid scene preview id");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await ensureSceneDirectory();
+  const entries = await readdir(scenesDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".preview.json")) {
+      continue;
+    }
+
+    const sceneId = entry.name.replace(/\.preview\.json$/, "");
+    if (!isSafeId(sceneId)) {
+      continue;
+    }
+
+    const previewInfo = await readScenePreviewInfo(sceneId);
+    if (previewInfo?.publicId === publicId) {
+      return sceneId;
+    }
+  }
+
+  const error = new Error("Scene image not found");
+  error.statusCode = 404;
+  throw error;
+};
+
+const readSceneImageByPublicPreviewId = async (publicId) =>
+  readSceneImage(await getSceneIdByPublicPreviewId(publicId));
 
 const listScenes = async () => {
   await ensureSceneDirectory();
@@ -292,6 +587,21 @@ const handleApiRequest = async (req, res, url) => {
     return true;
   }
 
+  const publicSceneImageMatch = pathname.match(
+    /^\/preview\/([a-f0-9]{32})\.png$/,
+  );
+
+  if (req.method === "GET" && publicSceneImageMatch) {
+    const [, publicId] = publicSceneImageMatch;
+    sendBuffer(
+      res,
+      200,
+      await readSceneImageByPublicPreviewId(publicId),
+      "image/png",
+    );
+    return true;
+  }
+
   if (pathname.startsWith("/api/scenes")) {
     await requireSession(req);
   }
@@ -308,6 +618,7 @@ const handleApiRequest = async (req, res, url) => {
     const savedScene = await writeScene({
       name: body.name,
       scene: body.scene,
+      image: body.image,
     });
     sendJson(res, 201, savedScene);
     return true;
@@ -330,6 +641,7 @@ const handleApiRequest = async (req, res, url) => {
       currentId: sceneId,
       name: body.name,
       scene: body.scene,
+      image: body.image,
     });
     sendJson(res, 200, savedScene);
     return true;
@@ -338,6 +650,8 @@ const handleApiRequest = async (req, res, url) => {
   if (req.method === "DELETE") {
     await loadSceneDocument(sceneId);
     await rm(getScenePath(sceneId), { force: true });
+    await rm(getSceneImagePath(sceneId), { force: true });
+    await rm(getScenePreviewMetaPath(sceneId), { force: true });
     sendJson(res, 200, { ok: true });
     return true;
   }
@@ -356,7 +670,10 @@ const server = createServer(async (req, res) => {
   );
 
   try {
-    if (url.pathname.startsWith("/api/")) {
+    if (
+      url.pathname.startsWith("/api/") ||
+      url.pathname.startsWith("/preview/")
+    ) {
       const handled = await handleApiRequest(req, res, url);
       if (!handled) {
         sendError(res, 404, "Not found");

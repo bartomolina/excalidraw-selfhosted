@@ -3,6 +3,8 @@ import {
   LiveCollaborationTrigger,
   TTDDialogTrigger,
   CaptureUpdateAction,
+  exportToBlob,
+  MIME_TYPES,
   reconcileElements,
   useEditorInterface,
   ExcalidrawAPIProvider,
@@ -35,16 +37,12 @@ import {
 } from "@excalidraw/common";
 import polyfill from "@excalidraw/excalidraw/polyfill";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
+import { getDataURL, loadFromBlob } from "@excalidraw/excalidraw/data/blob";
 import { serializeAsJSON } from "@excalidraw/excalidraw/data/json";
 import { t } from "@excalidraw/excalidraw/i18n";
 
 import {
-  GithubIcon,
   file,
-  XBrandIcon,
-  DiscordIcon,
-  ExcalLogo,
   usersIcon,
   exportToPlus,
   share,
@@ -110,6 +108,7 @@ import {
 } from "./components/ExportToExcalidrawPlus";
 import { AuthScreen } from "./components/AuthScreen";
 import { ServerScenesDialog } from "./components/ServerScenesDialog";
+import { ServerSceneTopBar } from "./components/ServerSceneTopBar";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 
 import {
@@ -149,7 +148,6 @@ import { ExcalidrawPlusIframeExport } from "./ExcalidrawPlusIframeExport";
 
 import "./index.scss";
 
-import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
 import { authClient } from "./data/authClient";
 import {
@@ -159,7 +157,10 @@ import {
 } from "./data/serverScenes";
 
 import type { CollabAPI } from "./collab/Collab";
-import type { ServerSceneMeta } from "./data/serverScenes";
+import type {
+  ServerSceneImagePayload,
+  ServerSceneMeta,
+} from "./data/serverScenes";
 
 polyfill();
 
@@ -442,7 +443,8 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
   });
 
   const [, forceRefresh] = useState(false);
-  const skipNextServerDirtyRef = useRef(false);
+  const lastSavedServerSceneRef = useRef<string | null>(null);
+  const lastSavedServerSceneNameRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (isDevEnv()) {
@@ -704,8 +706,20 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
-    if (skipNextServerDirtyRef.current) {
-      skipNextServerDirtyRef.current = false;
+    if (lastSavedServerSceneRef.current) {
+      const currentSceneName =
+        (appState.name || "").trim() ||
+        lastSavedServerSceneNameRef.current ||
+        "Untitled";
+      const currentSnapshot = serializeServerSceneSnapshot(
+        currentSceneName,
+        elements,
+        appState,
+        files,
+      );
+      setIsServerSceneDirty(
+        currentSnapshot !== lastSavedServerSceneRef.current,
+      );
     } else {
       setIsServerSceneDirty(true);
     }
@@ -769,23 +783,75 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
     return currentServerScene?.name || "Untitled";
   }, [currentServerScene?.name, excalidrawAPI]);
 
+  const serializeServerSceneSnapshot = useCallback(
+    (
+      name: string,
+      elements = excalidrawAPI?.getSceneElementsIncludingDeleted(),
+      appState: Partial<AppState> | null | undefined =
+        excalidrawAPI?.getAppState(),
+      files = excalidrawAPI?.getFiles(),
+    ) => {
+      if (!elements || !appState || !files) {
+        throw new Error("Excalidraw API is not ready");
+      }
+
+      const normalizedFiles = Object.fromEntries(
+        Object.entries(files).map(([fileId, file]) => [
+          fileId,
+          {
+            ...file,
+            lastRetrieved: undefined,
+          },
+        ]),
+      ) as BinaryFiles;
+
+      return serializeAsJSON(
+        elements,
+        {
+          ...appState,
+          name,
+        },
+        normalizedFiles,
+        "local",
+      );
+    },
+    [excalidrawAPI],
+  );
+
   const buildServerScenePayload = useCallback(
-    (name: string) => {
+    (name: string) =>
+      JSON.parse(serializeServerSceneSnapshot(name)) as Record<string, unknown>,
+    [serializeServerSceneSnapshot],
+  );
+
+  const buildServerSceneImagePayload = useCallback(
+    async (name: string): Promise<ServerSceneImagePayload | null> => {
       if (!excalidrawAPI) {
         throw new Error("Excalidraw API is not ready");
       }
 
-      return JSON.parse(
-        serializeAsJSON(
-          excalidrawAPI.getSceneElementsIncludingDeleted(),
-          {
-            ...excalidrawAPI.getAppState(),
+      try {
+        const appState = excalidrawAPI.getAppState();
+        const blob = await exportToBlob({
+          elements: excalidrawAPI.getSceneElements(),
+          appState: {
+            ...appState,
             name,
+            exportBackground: true,
+            viewBackgroundColor: appState.viewBackgroundColor,
           },
-          excalidrawAPI.getFiles(),
-          "local",
-        ),
-      ) as Record<string, unknown>;
+          files: excalidrawAPI.getFiles(),
+          mimeType: MIME_TYPES.png,
+        });
+
+        return {
+          dataURL: await getDataURL(blob),
+          mimeType: MIME_TYPES.png,
+        };
+      } catch (error) {
+        console.error("Failed to export server scene preview", error);
+        return null;
+      }
     },
     [excalidrawAPI],
   );
@@ -804,22 +870,30 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
         excalidrawAPI.getAppState(),
         excalidrawAPI.getSceneElementsIncludingDeleted(),
       );
+      const restoredAppState = restoreAppState(
+        {
+          ...restoredScene.appState,
+          name: meta.name,
+        },
+        excalidrawAPI.getAppState(),
+      );
+      const restoredFiles = restoredScene.files || {};
 
-      skipNextServerDirtyRef.current = true;
+      lastSavedServerSceneRef.current = serializeServerSceneSnapshot(
+        meta.name,
+        restoredScene.elements,
+        restoredAppState,
+        restoredFiles,
+      );
+      lastSavedServerSceneNameRef.current = meta.name;
       excalidrawAPI.resetScene({ resetLoadingState: true });
       excalidrawAPI.updateScene({
         elements: restoredScene.elements,
-        appState: restoreAppState(
-          {
-            ...restoredScene.appState,
-            name: meta.name,
-          },
-          excalidrawAPI.getAppState(),
-        ),
+        appState: restoredAppState,
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
 
-      const files = Object.values(restoredScene.files || {});
+      const files = Object.values(restoredFiles);
       if (files.length) {
         excalidrawAPI.addFiles(files);
       }
@@ -830,7 +904,7 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
         message: `Opened "${meta.name}" from the server.`,
       });
     },
-    [excalidrawAPI],
+    [excalidrawAPI, serializeServerSceneSnapshot],
   );
 
   const maybeConfirmSceneReplacement = useCallback(async () => {
@@ -873,13 +947,22 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
         (mode === "save" ? currentServerScene?.name : "") ||
         getCurrentSceneName();
       const payload = buildServerScenePayload(sceneName);
+      const imagePayload = await buildServerSceneImagePayload(sceneName);
 
       const result =
         mode === "save" && currentServerScene
-          ? await updateServerScene(currentServerScene.id, sceneName, payload)
-          : await createServerScene(sceneName, payload);
+          ? await updateServerScene(
+              currentServerScene.id,
+              sceneName,
+              payload,
+              imagePayload,
+            )
+          : await createServerScene(sceneName, payload, imagePayload);
 
-      skipNextServerDirtyRef.current = true;
+      lastSavedServerSceneRef.current = serializeServerSceneSnapshot(
+        result.meta.name,
+      );
+      lastSavedServerSceneNameRef.current = result.meta.name;
       excalidrawAPI.updateScene({
         appState: {
           name: result.meta.name,
@@ -894,10 +977,12 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
       return result.meta;
     },
     [
+      buildServerSceneImagePayload,
       buildServerScenePayload,
       currentServerScene,
       excalidrawAPI,
       getCurrentSceneName,
+      serializeServerSceneSnapshot,
     ],
   );
 
@@ -907,6 +992,8 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
         return;
       }
 
+      lastSavedServerSceneRef.current = null;
+      lastSavedServerSceneNameRef.current = null;
       setCurrentServerScene(null);
       setIsServerSceneDirty(true);
       excalidrawAPI?.setToast({
@@ -1048,45 +1135,6 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
     );
   }
 
-  const ExcalidrawPlusCommand = {
-    label: "Excalidraw+",
-    category: DEFAULT_CATEGORIES.links,
-    predicate: true,
-    icon: <div style={{ width: 14 }}>{ExcalLogo}</div>,
-    keywords: ["plus", "cloud", "server"],
-    perform: () => {
-      window.open(
-        `${
-          import.meta.env.VITE_APP_PLUS_LP
-        }/plus?utm_source=excalidraw&utm_medium=app&utm_content=command_palette`,
-        "_blank",
-      );
-    },
-  };
-  const ExcalidrawPlusAppCommand = {
-    label: "Sign up",
-    category: DEFAULT_CATEGORIES.links,
-    predicate: true,
-    icon: <div style={{ width: 14 }}>{ExcalLogo}</div>,
-    keywords: [
-      "excalidraw",
-      "plus",
-      "cloud",
-      "server",
-      "signin",
-      "login",
-      "signup",
-    ],
-    perform: () => {
-      window.open(
-        `${
-          import.meta.env.VITE_APP_PLUS_APP
-        }?utm_source=excalidraw&utm_medium=app&utm_content=command_palette`,
-        "_blank",
-      );
-    },
-  };
-
   return (
     <div
       style={{ height: "100%" }}
@@ -1139,26 +1187,30 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
         autoFocus={true}
         theme={editorTheme}
         renderTopRightUI={(isMobile) => {
-          if (isMobile || !collabAPI || isCollabDisabled) {
+          if (isMobile) {
             return null;
           }
 
           return (
             <div className="excalidraw-ui-top-right">
-              {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
-                <ExcalidrawPlusPromoBanner
-                  isSignedIn={isExcalidrawPlusSignedUser}
-                />
-              )}
-
-              {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-                editorInterface={editorInterface}
+              <ServerSceneTopBar
+                currentScene={currentServerScene}
+                isDirty={isServerSceneDirty}
               />
+              {!!collabAPI && !isCollabDisabled && (
+                <>
+                  {collabError.message && (
+                    <CollabError collabError={collabError} />
+                  )}
+                  <LiveCollaborationTrigger
+                    isCollaborating={isCollaborating}
+                    onSelect={() =>
+                      setShareDialogState({ isOpen: true, type: "share" })
+                    }
+                    editorInterface={editorInterface}
+                  />
+                </>
+              )}
             </div>
           );
         }}
@@ -1378,67 +1430,6 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
               },
             },
             {
-              label: "GitHub",
-              icon: GithubIcon,
-              category: DEFAULT_CATEGORIES.links,
-              predicate: true,
-              keywords: [
-                "issues",
-                "bugs",
-                "requests",
-                "report",
-                "features",
-                "social",
-                "community",
-              ],
-              perform: () => {
-                window.open(
-                  "https://github.com/excalidraw/excalidraw",
-                  "_blank",
-                  "noopener noreferrer",
-                );
-              },
-            },
-            {
-              label: t("labels.followUs"),
-              icon: XBrandIcon,
-              category: DEFAULT_CATEGORIES.links,
-              predicate: true,
-              keywords: ["twitter", "contact", "social", "community"],
-              perform: () => {
-                window.open(
-                  "https://x.com/excalidraw",
-                  "_blank",
-                  "noopener noreferrer",
-                );
-              },
-            },
-            {
-              label: t("labels.discordChat"),
-              category: DEFAULT_CATEGORIES.links,
-              predicate: true,
-              icon: DiscordIcon,
-              keywords: [
-                "chat",
-                "talk",
-                "contact",
-                "bugs",
-                "requests",
-                "report",
-                "feedback",
-                "suggestions",
-                "social",
-                "community",
-              ],
-              perform: () => {
-                window.open(
-                  "https://discord.gg/UexuTaE",
-                  "_blank",
-                  "noopener noreferrer",
-                );
-              },
-            },
-            {
               label: "YouTube",
               icon: youtubeIcon,
               category: DEFAULT_CATEGORIES.links,
@@ -1452,15 +1443,6 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
                 );
               },
             },
-            ...(isExcalidrawPlusSignedUser
-              ? [
-                  {
-                    ...ExcalidrawPlusAppCommand,
-                    label: "Sign in / Go to Excalidraw+",
-                  },
-                ]
-              : [ExcalidrawPlusCommand, ExcalidrawPlusAppCommand]),
-
             {
               label: t("overwriteConfirm.action.excalidrawPlus.button"),
               category: DEFAULT_CATEGORIES.export,
@@ -1517,8 +1499,6 @@ const ExcalidrawWrapper = ({ onSignOut }: { onSignOut: () => void }) => {
 
 const AuthenticatedExcalidraw = () => {
   const { data: session, isPending } = authClient.useSession();
-  const allowedEmailsLabel =
-    import.meta.env.VITE_EXCALIDRAW_ALLOWED_EMAILS || "bartomolina@gmail.com";
 
   const handleSignOut = useCallback(async () => {
     await authClient.signOut();
@@ -1526,11 +1506,11 @@ const AuthenticatedExcalidraw = () => {
   }, []);
 
   if (isPending) {
-    return <AuthScreen allowedEmailsLabel={allowedEmailsLabel} />;
+    return <AuthScreen />;
   }
 
   if (!session) {
-    return <AuthScreen allowedEmailsLabel={allowedEmailsLabel} />;
+    return <AuthScreen />;
   }
 
   return <ExcalidrawWrapper onSignOut={handleSignOut} />;
