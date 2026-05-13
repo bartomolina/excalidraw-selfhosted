@@ -26,11 +26,11 @@ export const env = {
   ),
   scenesDir: path.resolve(
     process.env.EXCALIDRAW_SCENES_DIR ||
-      "/root/.openclaw/workspace/data/excalidraw/scenes",
+      "/root/.openclaw/data/excalidraw/scenes",
   ),
   authDbPath: path.resolve(
     process.env.EXCALIDRAW_AUTH_DB_PATH ||
-      "/root/.openclaw/workspace/data/excalidraw/auth.sqlite",
+      "/root/.openclaw/data/excalidraw/auth.sqlite",
   ),
   betterAuthUrl:
     process.env.BETTER_AUTH_URL ||
